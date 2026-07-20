@@ -42,6 +42,14 @@ Recommended secret order:
 
 ## Container image
 
+The published multi-architecture image is available from Docker Hub:
+
+```text
+h5k8/althuntarr:latest
+```
+
+Supported architectures are `linux/amd64` and `linux/arm64`.
+
 The image uses `alpine:3.22`, the smallest practical base for this Bash implementation. Installed runtime packages are only:
 
 - Bash;
@@ -86,13 +94,14 @@ Edit `config/config.json`:
 
 Edit `.env` and provide API keys matching each instance's `api_key_env` name. Compose injects these values into the container. Never commit `.env`.
 
-### 2. Build and start
+### 2. Pull and start
 
 ```text
-docker compose up --build -d
+docker compose pull
+docker compose up -d
 ```
 
-The supplied `compose.yaml` builds `althuntarrrscript:local`. To use a published image, remove the `build` block and replace the `image` value with its real registry reference.
+The supplied `compose.yaml` uses `h5k8/althuntarr:latest`. Its `build` block also permits local development with `docker compose up --build -d`.
 
 ### 3. Review dry-run output
 
@@ -131,6 +140,12 @@ Build locally:
 docker build -t althuntarrrscript:local .
 ```
 
+Pull the published image:
+
+```text
+docker pull h5k8/althuntarr:latest
+```
+
 First run using environment secrets:
 
 ```text
@@ -148,7 +163,7 @@ docker run --rm \
   -e RADARR_API_KEY='replace-me' \
   -v "$PWD/config:/config" \
   -v "$PWD/data:/data" \
-  althuntarrrscript:local
+  h5k8/althuntarr:latest
 ```
 
 If `/config/config.json` is absent and `/config` is writable, the entrypoint copies the bundled example to that path and exits. Edit it and run the container again.
@@ -159,7 +174,7 @@ Health check only:
 docker run --rm \
   -v "$PWD/config:/config" \
   -v "$PWD/data:/data" \
-  althuntarrrscript:local healthcheck
+  h5k8/althuntarr:latest healthcheck
 ```
 
 ### Container environment variables
@@ -186,7 +201,29 @@ The Unraid Docker template is **[`unraid/altHuntarrrscript.xml`](unraid/altHunta
 
 There is intentionally no application WebUI: this project opens no port and runs no HTTP server. Unraid's Docker GUI remains fully usable for installation, configuration, logs, console access, start/stop, updates, and resource settings; the template's `WebUI` field is therefore empty by design.
 
-The template pulls `ghcr.io/h5k8/althuntarr:latest`. The repository must publish that image before Unraid can install it directly.
+The template pulls `h5k8/althuntarr:latest` from Docker Hub.
+
+## Docker Hub publishing workflow
+
+The GitHub Actions workflow at [`.github/workflows/docker-publish.yml`](.github/workflows/docker-publish.yml) validates the project and builds multi-architecture Docker images.
+
+Configure these GitHub repository Actions secrets before running it:
+
+| Secret | Value |
+| --- | --- |
+| `DOCKERHUB_USERNAME` | Docker Hub user with push access to `h5k8/althuntarr` |
+| `DOCKERHUB_TOKEN` | Docker Hub access token with read/write permission; do not use the account password |
+
+Create the Docker Hub repository `h5k8/althuntarr` before the first push. The workflow behavior is:
+
+- pull requests: run checks and build both architectures without pushing;
+- pushes to `main`: publish `latest`, `edge`, and `sha-<commit>`;
+- tags such as `v1.2.3`: publish `1.2.3`, `1.2`, `1`, and `sha-<commit>`;
+- manual `workflow_dispatch`: build and publish a commit tag.
+
+Until both secrets are configured, non-PR runs stay in build-only mode and print an explanatory message instead of failing authentication.
+
+Each image includes OCI metadata, a provenance attestation, and an SBOM. GitHub Actions cache is used for subsequent builds.
 
 ### Manual template installation
 

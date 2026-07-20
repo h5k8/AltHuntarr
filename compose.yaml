@@ -1,7 +1,6 @@
 services:
   althuntarrrscript:
-    # Replace with the published GHCR image when available; Compose builds this tag locally by default.
-    image: althuntarrrscript:local
+    image: h5k8/althuntarr:latest
     build:
       context: .
     container_name: althuntarrrscript
