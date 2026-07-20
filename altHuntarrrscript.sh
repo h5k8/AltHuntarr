@@ -264,7 +264,7 @@ prepare_directories() {
 }
 
 resolve_api_key() {
-    local instance="$1" suppress_warning="${2:-0}" env_name key_file secret_ref direct key
+    local instance="$1" suppress_warning="${2:-0}" env_name key_file secret_ref direct key source
     env_name="$(jq -r '.api_key_env // empty' <<<"$instance")"
     key_file="$(jq -r '.api_key_file // empty' <<<"$instance")"
     secret_ref="$(jq -r '.secret_ref // empty' <<<"$instance")"
@@ -273,17 +273,22 @@ resolve_api_key() {
     if [[ -n "$env_name" ]]; then
         [[ "$env_name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || die "$EXIT_CONFIG" "Invalid API-key environment variable name"
         key="${!env_name-}"
+        source="environment variable $env_name"
     elif [[ -n "$key_file" ]]; then
         assert_secret_permissions "$key_file"
         key="$(head -n 1 -- "$key_file")"
+        source="API-key file $key_file"
     elif [[ -n "$secret_ref" ]]; then
         [[ -n "$SECRETS_PATH" ]] || die "$EXIT_CONFIG" "secret_ref requires --secrets"
         key="$(jq -r --arg ref "$secret_ref" '.[$ref] // empty' "$SECRETS_PATH")"
+        source="secret reference $secret_ref"
     else
         key="$direct"
+        source="direct configuration value"
         ((suppress_warning)) || printf '%s\n' "$(utc_iso) WARN run=${RUN_ID:-bootstrap} event=direct_api_key message=\"Prefer api_key_env, api_key_file, or secret_ref\"" >&2
     fi
-    [[ "$key" =~ ^[A-Za-z0-9._-]+$ ]] || die "$EXIT_CONFIG" "API key could not be securely resolved"
+    [[ -n "$key" ]] || die "$EXIT_CONFIG" "API key is missing from $source"
+    [[ "$key" =~ ^[A-Za-z0-9._-]+$ ]] || die "$EXIT_CONFIG" "API key from $source contains unsupported characters"
     printf '%s' "$key"
 }
 

@@ -22,15 +22,16 @@ config_value() {
     docker run --rm --entrypoint cat -v "$CONFIG_DIR:/config:ro" "$IMAGE" /config/config.json | jq -r "$1"
 }
 
-@test "first run applies Sonarr and Radarr URL overrides" {
+@test "first start applies URL overrides and remains ready" {
     run docker run --rm \
         -e ALTHUNTARR_SONARR_URL=http://192.168.1.10:8989/ \
         -e ALTHUNTARR_RADARR_URL=http://192.168.1.10:7878 \
         -v "$CONFIG_DIR:/config" \
         -v "$DATA_DIR:/data" \
-        "$IMAGE"
+        "$IMAGE" healthcheck
 
-    [ "$status" -eq 3 ]
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Created configuration at /config/config.json; continuing"* ]]
     [ "$(config_value '.instances[] | select(.type == "sonarr") | .url')" = "http://192.168.1.10:8989" ]
     [ "$(config_value '.instances[] | select(.type == "radarr") | .url')" = "http://192.168.1.10:7878" ]
 }

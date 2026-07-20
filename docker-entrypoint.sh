@@ -82,8 +82,7 @@ if [ "$(id -u)" = "0" ]; then
         apply_url_overrides
         chmod 600 "$config_path"
         chown "$puid:$pgid" "$config_path"
-        printf 'Created example configuration at %s. Edit it, then restart the container.\n' "$config_path" >&2
-        exit 3
+        printf 'Created configuration at %s; continuing with the configured environment values.\n' "$config_path" >&2
     fi
 
     if [ "${1:-}" != "healthcheck" ]; then
