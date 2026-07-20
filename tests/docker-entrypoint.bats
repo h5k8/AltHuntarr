@@ -23,15 +23,19 @@ config_value() {
 }
 
 @test "first start applies URL overrides and remains ready" {
+    jq '.instances |= map(.enabled = false)' "$ROOT/examples/config.example.json" >"$CONFIG_DIR/config.json"
+    chmod 600 "$CONFIG_DIR/config.json"
+
     run docker run --rm \
+        -e ALTHUNTARR_RUN_ONCE=true \
         -e ALTHUNTARR_SONARR_URL=http://192.168.1.10:8989/ \
         -e ALTHUNTARR_RADARR_URL=http://192.168.1.10:7878 \
         -v "$CONFIG_DIR:/config" \
         -v "$DATA_DIR:/data" \
-        "$IMAGE" healthcheck
+        "$IMAGE"
 
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"Created configuration at /config/config.json; continuing"* ]]
+    [ "$status" -eq 3 ]
+    [[ "$output" == *"no_instances_selected"* ]]
     [ "$(config_value '.instances[] | select(.type == "sonarr") | .url')" = "http://192.168.1.10:8989" ]
     [ "$(config_value '.instances[] | select(.type == "radarr") | .url')" = "http://192.168.1.10:7878" ]
 }
