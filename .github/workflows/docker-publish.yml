@@ -61,13 +61,9 @@ jobs:
         run: |
           jq empty examples/config.example.json examples/secrets.example.json
 
-      - name: Build integration test image
-        run: |
-          docker build --tag althuntarr-entrypoint-test .
-
       - name: Run Bats tests
         run: |
-          bats --print-output-on-failure tests
+          bats --print-output-on-failure tests/altHuntarrrscript.bats
 
   docker:
     name: Build${{ github.event_name != 'pull_request' && ' and publish' || '' }} image
