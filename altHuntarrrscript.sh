@@ -535,9 +535,9 @@ filter_candidates() {
       def movie_date: if $release_mode == "physical" then (.physicalRelease // .digitalRelease // .inCinemas) elif $release_mode == "cinema" then (.inCinemas // .digitalRelease // .physicalRelease) else (.digitalRelease // .physicalRelease // .inCinemas) end;
       def item_key: if $app == "sonarr" then "episode:" + (.id | tostring) else "movie:" + (.id | tostring) end;
       map(select(if $app == "sonarr" then ((.id | type) == "number" and (.seriesId | type) == "number") else ((.id | type) == "number") end))
-      | map(select(($only_monitored | not) or (.monitored == true))) | map(select(if $app == "sonarr" then ((.series.monitored? // true) == true) else true end))
+    | map(select(($only_monitored | not) or (.monitored == true))) | map(select(if $app == "sonarr" then (.series.monitored? != false) else true end))
       | map(select(if $app == "radarr" and $operation == "missing" then (.hasFile == false or .hasFile == null) else true end))
-      | map(select(($skip_future | not) or (if $app == "sonarr" then valid_time(.airDateUtc) else valid_time(movie_date) end))) | map(. + {item_key:item_key}) | map(select(($processed | index(.item_key)) | not))
+    | map(select(($skip_future | not) or (if $app == "sonarr" then valid_time(.airDateUtc) else valid_time(movie_date) end))) | map(. + {item_key:item_key}) | map(select(.item_key as $key | ($processed | index($key) | not)))
     ' <<<"$items"
 }
 select_candidates() {
