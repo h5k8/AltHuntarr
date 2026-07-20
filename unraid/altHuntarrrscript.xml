@@ -11,7 +11,7 @@
   <Overview>Small, non-root Sonarr/Radarr helper that gradually submits missing and cutoff-upgrade searches. No web UI or listening port. Starts in dry-run mode.</Overview>
   <Category>MediaApp:Other</Category>
   <WebUI/>
-  <Icon>https://raw.githubusercontent.com/h5k8/AltHuntarr/main/unraid/icon.svg</Icon>
+  <Icon>https://raw.githubusercontent.com/h5k8/AltHuntarr/main/unraid/icon.png</Icon>
   <ExtraParams>--read-only --tmpfs /tmp:size=16m,mode=1777 --cap-drop=ALL --cap-add=CHOWN --cap-add=DAC_OVERRIDE --cap-add=FOWNER --cap-add=SETGID --cap-add=SETUID --security-opt=no-new-privileges:true</ExtraParams>
   <PostArgs/>
   <CPUset/>

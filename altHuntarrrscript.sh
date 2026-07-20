@@ -249,7 +249,7 @@ prepare_directories() {
     STATE_DIR="$(jq -r '.general.state_dir' "$CONFIG_PATH")"
     LOG_DIR="$(jq -r '.general.log_dir' "$CONFIG_PATH")"
     mkdir -p -- "$STATE_DIR" "$LOG_DIR" || die "$EXIT_STATE" "Cannot create state/log directories"
-    chmod 700 -- "$STATE_DIR" "$LOG_DIR" || die "$EXIT_SECURITY" "Cannot secure state/log directories"
+    chmod 700 -- "$STATE_DIR" "$LOG_DIR" 2>/dev/null || log warn "event=chmod_skipped path=$(printf '%q' "$STATE_DIR")"
     [[ -w "$STATE_DIR" && -w "$LOG_DIR" ]] || die "$EXIT_STATE" "State/log directories are not writable"
     STATE_FILE="$STATE_DIR/processed.jsonl"
     COUNTER_FILE="$STATE_DIR/hourly-counters.json"
@@ -260,7 +260,7 @@ prepare_directories() {
     [[ -f "$COUNTER_FILE" ]] || printf '{}\n' >"$COUNTER_FILE"
     [[ -f "$LOG_FILE" ]] || : >"$LOG_FILE" || die "$EXIT_STATE" "Cannot initialize log file"
     [[ -f "$RUNS_FILE" ]] || : >"$RUNS_FILE" || die "$EXIT_STATE" "Cannot initialize run log"
-    chmod 600 -- "$STATE_FILE" "$COUNTER_FILE" "$LOG_FILE" "$RUNS_FILE" || die "$EXIT_SECURITY" "Cannot secure runtime files"
+    chmod 600 -- "$STATE_FILE" "$COUNTER_FILE" "$LOG_FILE" "$RUNS_FILE" 2>/dev/null || log warn "event=chmod_skipped path=$(printf '%q' "$STATE_DIR")"
 }
 
 resolve_api_key() {
@@ -495,24 +495,34 @@ get_queue_size() {
 }
 
 fetch_paginated_wanted() {
-    local endpoint="$1" page=1 total=-1 records='[]' page_records count current sort_key
+    local endpoint="$1" page=1 total=-1 page_records count current sort_key records_file
     if [[ "$CURRENT_TYPE" == "sonarr" ]]; then sort_key="airDateUtc"; else case "$(jq -r '.future_release_date // "digital"' <<<"$CURRENT_INSTANCE_JSON")" in physical) sort_key="physicalRelease" ;; cinema) sort_key="inCinemas" ;; *) sort_key="digitalRelease" ;; esac fi
+    records_file="$(safe_temp)"
+    : >"$records_file"
     while :; do
-        arr_request GET "${endpoint}?page=${page}&pageSize=${PAGE_SIZE}&sortKey=${sort_key}&sortDirection=ascending" || return 1
-        page_records="$(jq -c 'if (.records | type) == "array" then .records elif type == "array" then . else error("missing records") end' <<<"$ARR_RESPONSE")" || return 1
+        arr_request GET "${endpoint}?page=${page}&pageSize=${PAGE_SIZE}&sortKey=${sort_key}&sortDirection=ascending" || {
+            rm -f -- "$records_file"
+            return 1
+        }
+        page_records="$(jq -c 'if (.records | type) == "array" then .records elif type == "array" then . else error("missing records") end' <<<"$ARR_RESPONSE")" || {
+            rm -f -- "$records_file"
+            return 1
+        }
         count="$(jq -r length <<<"$page_records")"
         current="$(jq -r '.totalRecords // empty' <<<"$ARR_RESPONSE")"
         [[ -z "$current" ]] || total="$current"
-        records="$(jq -c --argjson a "$records" --argjson b "$page_records" '$a + $b' <<<null)" || return 1
+        printf '%s\n' "$page_records" >>"$records_file"
         ((count == 0)) && break
         ((total >= 0 && page * PAGE_SIZE >= total)) && break
         page=$((page + 1))
         ((page <= 100000)) || {
             log error "instance=$(printf '%q' "$CURRENT_NAME") event=pagination_limit"
+            rm -f -- "$records_file"
             return 1
         }
     done
-    printf '%s\n' "$records"
+    jq -sc 'add // []' "$records_file"
+    rm -f -- "$records_file"
 }
 radarr_fetch_missing() {
     local records
@@ -660,7 +670,7 @@ run_operation() {
     printf '%s %s %s %s %s\n' "$fetched" "$eligible_count" "$selected_count" "$submitted" "$failed"
 }
 
-metrics_json() { awk '{printf "{\\\"fetched\\\":%s,\\\"eligible\\\":%s,\\\"selected\\\":%s,\\\"submitted\\\":%s,\\\"failed\\\":%s}", $1,$2,$3,$4,$5}' <<<"$1"; }
+metrics_json() { awk '{printf "{\"fetched\":%s,\"eligible\":%s,\"selected\":%s,\"submitted\":%s,\"failed\":%s}", $1,$2,$3,$4,$5}' <<<"$1"; }
 record_instance_result() { jq -cn --arg app "$CURRENT_TYPE" --arg instance "$CURRENT_NAME" --arg id "$CURRENT_INSTANCE_ID" --arg status "$1" --argjson queue "$2" --argjson missing "$3" --argjson upgrade "$4" '{app:$app,instance:$instance,instance_id:$id,status:$status,queue_size:$queue,missing:$missing,upgrade:$upgrade}' >>"$RUN_RESULTS_FILE"; }
 
 run_instance() {
