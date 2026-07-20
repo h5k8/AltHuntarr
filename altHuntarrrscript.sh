@@ -344,7 +344,9 @@ atomic_json_replace() {
         rm -f -- "$temporary"
         die "$EXIT_STATE" "Refusing invalid JSON write: $destination"
     }
-    command -v sync >/dev/null 2>&1 && sync -f "$temporary" 2>/dev/null || true
+    if command -v sync >/dev/null 2>&1; then
+        sync -f "$temporary" 2>/dev/null || true
+    fi
     mv -f -- "$temporary" "$destination" || die "$EXIT_STATE" "Atomic rename failed: $destination"
     chmod 600 "$destination"
 }
@@ -362,7 +364,9 @@ state_compact() {
         rm -f -- "$temporary"
         die "$EXIT_STATE" "State contains invalid records"
     fi
-    command -v sync >/dev/null 2>&1 && sync -f "$temporary" 2>/dev/null || true
+    if command -v sync >/dev/null 2>&1; then
+        sync -f "$temporary" 2>/dev/null || true
+    fi
     mv -f -- "$temporary" "$STATE_FILE" || die "$EXIT_STATE" "Cannot compact state"
     chmod 600 "$STATE_FILE"
 }
@@ -380,7 +384,9 @@ state_record_items() {
     else
         jq -cn --argjson additions "$additions" '$additions[]' >"$temporary" || die "$EXIT_STATE" "Cannot initialize state"
     fi
-    command -v sync >/dev/null 2>&1 && sync -f "$temporary" 2>/dev/null || true
+    if command -v sync >/dev/null 2>&1; then
+        sync -f "$temporary" 2>/dev/null || true
+    fi
     mv -f -- "$temporary" "$STATE_FILE" || die "$EXIT_STATE" "Cannot write state"
     chmod 600 "$STATE_FILE"
 }
