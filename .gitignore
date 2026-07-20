@@ -1,0 +1,18 @@
+# Local secrets and runtime data
+.env
+config/
+data/
+state/
+logs/
+*.key
+secrets.json
+
+# Editor and operating-system files
+.DS_Store
+.vscode/
+.idea/
+
+# Test and temporary output
+*.log
+*.bak
+*.tmp

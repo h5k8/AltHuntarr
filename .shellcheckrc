@@ -1,0 +1,5 @@
+# Bash 4.3 is the project's minimum supported interpreter.
+shell=bash
+
+# The script intentionally uses dynamically allocated file descriptors (Bash 4.1+).
+disable=SC3043

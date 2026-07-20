@@ -1,0 +1,13 @@
+.git
+.github
+.vscode
+.DS_Store
+*.log
+*.bak
+config.json
+secrets.json
+state/
+logs/
+tests/
+unraid/
+requirements.md
