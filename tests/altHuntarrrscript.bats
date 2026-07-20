@@ -12,6 +12,7 @@ setup() {
     printf '{}\n' >"$COUNTER_FILE"
     CURRENT_TYPE="sonarr"
     CURRENT_NAME="Test Sonarr"
+    CURRENT_APP_LABEL="Sonarr"
     CURRENT_URL="http://sonarr.test:8989"
     CURRENT_INSTANCE_ID="test-instance"
     CURRENT_HOURLY_CAP=3
@@ -28,6 +29,44 @@ setup() {
 
     run normalize_base_url "https://sonarr.example.test/api/v3"
     [ "$status" -ne 0 ]
+}
+
+@test "uses canonical labels for supported applications" {
+    [ "$(app_label sonarr)" = "Sonarr" ]
+    [ "$(app_label radarr)" = "Radarr" ]
+}
+
+@test "connection lifecycle logs identify Sonarr without configured name" {
+    RUN_ID="test-run"
+    LOG_LEVEL="info"
+    RUN_RESULTS_FILE="$BATS_TEST_TMPDIR/results.jsonl"
+    : >"$RUN_RESULTS_FILE"
+    HEALTH_CHECK=1
+    resolve_api_key() { printf 'test-key\n'; }
+    check_connection() { ARR_HTTP=200; return 0; }
+
+    run run_instance '{"name":"Sonarr-1080p","type":"sonarr","url":"http://sonarr.test:8989","api_key_env":"SONARR_API_KEY","max_download_queue_size":-1,"hourly_search_cap":0}'
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"app=Sonarr event=connection_check_started"* ]]
+    [[ "$output" == *"app=Sonarr event=connection_ok status=200"* ]]
+    [[ "$output" != *"Sonarr-1080p"* ]]
+}
+
+@test "candidate discovery logs the request at info level" {
+    RUN_ID="test-run"
+    LOG_LEVEL="info"
+    CURRENT_INSTANCE_JSON='{}'
+    arr_request() {
+        ARR_RESPONSE='{"totalRecords":0,"records":[]}'
+        ARR_HTTP=200
+    }
+
+    run fetch_paginated_wanted "/wanted/missing"
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"app=Sonarr event=candidate_page_request endpoint=/wanted/missing page=1"* ]]
+    [[ "$output" == *"[]"* ]]
 }
 
 @test "processed state is scoped to app instance and operation" {

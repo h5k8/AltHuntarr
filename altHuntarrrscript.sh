@@ -55,6 +55,7 @@ CURRENT_INSTANCE_ID=""
 CURRENT_QUEUE_LIMIT=-1
 CURRENT_HOURLY_CAP=-1
 CURRENT_INSTANCE_JSON=""
+CURRENT_APP_LABEL=""
 ARR_RESPONSE=""
 ARR_HTTP=0
 ARR_ERROR=""
@@ -102,6 +103,14 @@ log() {
     line="$(utc_iso) ${upper_level} run=${RUN_ID:-bootstrap} $*"
     printf '%s\n' "$line" >&2
     [[ -z "$LOG_FILE" ]] || printf '%s\n' "$line" >>"$LOG_FILE"
+}
+
+app_label() {
+    case "$1" in
+    sonarr) printf 'Sonarr\n' ;;
+    radarr) printf 'Radarr\n' ;;
+    *) printf '%s\n' "$1" ;;
+    esac
 }
 
 die() {
@@ -449,6 +458,7 @@ arr_request() {
     } >"$cfg"
     chmod 600 "$cfg" "$response" "$headers" ${body_file:+"$body_file"}
     while :; do
+        log debug "app=$CURRENT_APP_LABEL event=http_request method=$method endpoint=$(printf '%q' "$endpoint") attempt=$((attempt + 1))"
         : >"$response"
         : >"$headers"
         curl_exit=0
@@ -456,6 +466,7 @@ arr_request() {
         ARR_HTTP="${status:-0}"
         if ((curl_exit == 0)) && [[ "$ARR_HTTP" =~ ^2[0-9][0-9]$ ]] && jq -e . "$response" >/dev/null 2>&1; then
             ARR_RESPONSE="$(cat "$response")"
+            log debug "app=$CURRENT_APP_LABEL event=http_response method=$method endpoint=$(printf '%q' "$endpoint") status=$ARR_HTTP"
             rm -f -- "$cfg" "$response" "$headers" ${body_file:+"$body_file"}
             return 0
         fi
@@ -464,11 +475,12 @@ arr_request() {
             retry_after="$(awk 'BEGIN{IGNORECASE=1} tolower($1)=="retry-after:" {gsub("\\r","",$2); if($2~/^[0-9]+$/) print $2; exit}' "$headers")"
             if [[ -n "$retry_after" ]]; then delay="$retry_after"; else delay=$((RETRY_DELAY * attempt + RANDOM % 2)); fi
             ((delay > 60)) && delay=60
-            log warn "instance=$(printf '%q' "$CURRENT_NAME") event=http_retry endpoint=$(printf '%q' "$endpoint") status=$ARR_HTTP attempt=$attempt"
+            log warn "app=$CURRENT_APP_LABEL event=http_retry method=$method endpoint=$(printf '%q' "$endpoint") status=$ARR_HTTP attempt=$attempt"
             sleep "$delay"
             continue
         fi
         ARR_ERROR="HTTP ${ARR_HTTP:-0} for $method $endpoint"
+        log warn "app=$CURRENT_APP_LABEL event=http_request_failed method=$method endpoint=$(printf '%q' "$endpoint") status=$ARR_HTTP"
         rm -f -- "$cfg" "$response" "$headers" ${body_file:+"$body_file"}
         return 1
     done
@@ -476,7 +488,7 @@ arr_request() {
 arr_post_command() {
     local payload="$1"
     if ((DRY_RUN)); then
-        log info "instance=$(printf '%q' "$CURRENT_NAME") event=dry_run_post_blocked"
+        log info "app=$CURRENT_APP_LABEL event=search_request_skipped reason=dry_run"
         return 0
     fi
     arr_request POST "/command" "$payload" || return 1
@@ -505,6 +517,7 @@ fetch_paginated_wanted() {
     records_file="$(safe_temp)"
     : >"$records_file"
     while :; do
+        log info "app=$CURRENT_APP_LABEL event=candidate_page_request endpoint=$(printf '%q' "$endpoint") page=$page"
         arr_request GET "${endpoint}?page=${page}&pageSize=${PAGE_SIZE}&sortKey=${sort_key}&sortDirection=ascending" || {
             rm -f -- "$records_file"
             return 1
@@ -521,7 +534,7 @@ fetch_paginated_wanted() {
         ((total >= 0 && page * PAGE_SIZE >= total)) && break
         page=$((page + 1))
         ((page <= 100000)) || {
-            log error "instance=$(printf '%q' "$CURRENT_NAME") event=pagination_limit"
+            log error "app=$CURRENT_APP_LABEL event=pagination_limit"
             rm -f -- "$records_file"
             return 1
         }
@@ -536,7 +549,7 @@ radarr_fetch_missing() {
         return 0
     fi
     if [[ "$ARR_HTTP" == 404 ]]; then
-        log warn "instance=$(printf '%q' "$CURRENT_NAME") event=radarr_missing_fallback"
+        log warn "app=$CURRENT_APP_LABEL event=radarr_missing_fallback"
         arr_request GET "/movie" || return 1
         jq -c 'if type == "array" then . else error("movie endpoint did not return an array") end' <<<"$ARR_RESPONSE"
         return 0
@@ -574,7 +587,7 @@ select_candidates() {
 }
 show_selected_candidates() {
     local operation="$1" selected="$2"
-    jq -r --arg app "$CURRENT_TYPE" --arg instance "$CURRENT_NAME" --arg operation "$operation" '.[] | "candidate app=\($app) instance=\($instance) operation=\($operation) item_key=\(.item_key) title=\(.title // .series.title // "unknown")"' <<<"$selected" >&2
+    jq -r --arg app "$CURRENT_APP_LABEL" --arg operation "$operation" '.[] | "candidate app=\($app) operation=\($operation) item_key=\(.item_key) title=\(.title // .series.title // "unknown")"' <<<"$selected" >&2
 }
 
 submit_radarr() {
@@ -584,15 +597,16 @@ submit_radarr() {
         (($(counter_remaining "$CURRENT_HOURLY_CAP") > 0)) || break
         id="$(jq -r '.id' <<<"$one")"
         payload="$(jq -cn --argjson id "$id" '{name:"MoviesSearch", movieIds:[$id]}')"
+        log info "app=$CURRENT_APP_LABEL operation=$operation event=search_request_started command=MoviesSearch items=1"
         if arr_post_command "$payload"; then
             command_id="$(jq -r '.id' <<<"$ARR_RESPONSE")"
             state_record_items "$operation" "movie" "$command_id" "[$one]"
             counter_increment
             submitted=$((submitted + 1))
-            log info "instance=$(printf '%q' "$CURRENT_NAME") operation=$operation event=search_submitted command_id=$command_id items=1"
+            log info "app=$CURRENT_APP_LABEL operation=$operation event=search_submitted command=MoviesSearch command_id=$command_id items=1"
         else
             failed=$((failed + 1))
-            log warn "instance=$(printf '%q' "$CURRENT_NAME") operation=$operation event=command_failed status=$ARR_HTTP"
+            log warn "app=$CURRENT_APP_LABEL operation=$operation event=search_request_failed command=MoviesSearch status=$ARR_HTTP error=$(printf '%q' "$ARR_ERROR")"
         fi
     done < <(jq -c '.[]' <<<"$selected")
     printf '%s %s\n' "$submitted" "$failed"
@@ -605,15 +619,16 @@ submit_sonarr_episodes() {
         ids="$(jq -c '[.items[].id]' <<<"$group")"
         items="$(jq -c '.items' <<<"$group")"
         payload="$(jq -cn --argjson ids "$ids" '{name:"EpisodeSearch", episodeIds:$ids}')"
+        log info "app=$CURRENT_APP_LABEL operation=$operation event=search_request_started command=EpisodeSearch items=$(jq 'length' <<<"$items")"
         if arr_post_command "$payload"; then
             command_id="$(jq -r '.id' <<<"$ARR_RESPONSE")"
             state_record_items "$operation" "episode" "$command_id" "$items"
             counter_increment
             submitted=$((submitted + 1))
-            log info "instance=$(printf '%q' "$CURRENT_NAME") operation=$operation event=search_submitted command_id=$command_id items=$(jq 'length' <<<"$items")"
+            log info "app=$CURRENT_APP_LABEL operation=$operation event=search_submitted command=EpisodeSearch command_id=$command_id items=$(jq 'length' <<<"$items")"
         else
             failed=$((failed + 1))
-            log warn "instance=$(printf '%q' "$CURRENT_NAME") operation=$operation event=command_failed status=$ARR_HTTP"
+            log warn "app=$CURRENT_APP_LABEL operation=$operation event=search_request_failed command=EpisodeSearch status=$ARR_HTTP error=$(printf '%q' "$ARR_ERROR")"
         fi
     done < <(jq -c 'sort_by(.seriesId) | group_by(.seriesId)[] | {items:.}' <<<"$selected")
     printf '%s %s\n' "$submitted" "$failed"
@@ -623,13 +638,24 @@ run_operation() {
     local operation="$1" enabled batch remaining effective monitored skip_future release_mode records eligible selected fetched eligible_count selected_count result submitted failed
     enabled="$(jq -r --arg op "$operation" '.[$op].enabled' <<<"$CURRENT_INSTANCE_JSON")"
     batch="$(jq -r --arg op "$operation" '.[$op].batch_size' <<<"$CURRENT_INSTANCE_JSON")"
-    [[ "$enabled" == true && "$batch" != 0 && ("$MODE_FILTER" == both || "$MODE_FILTER" == "$operation") ]] || {
+    if [[ "$enabled" != true ]]; then
+        log info "app=$CURRENT_APP_LABEL operation=$operation event=operation_skipped reason=disabled"
         echo '0 0 0 0 0'
         return
-    }
+    fi
+    if [[ "$batch" == 0 ]]; then
+        log info "app=$CURRENT_APP_LABEL operation=$operation event=operation_skipped reason=batch_size_zero"
+        echo '0 0 0 0 0'
+        return
+    fi
+    if [[ "$MODE_FILTER" != both && "$MODE_FILTER" != "$operation" ]]; then
+        log info "app=$CURRENT_APP_LABEL operation=$operation event=operation_skipped reason=mode_filter"
+        echo '0 0 0 0 0'
+        return
+    fi
     remaining="$(counter_remaining "$CURRENT_HOURLY_CAP")"
     ((remaining > 0)) || {
-        log info "instance=$(printf '%q' "$CURRENT_NAME") operation=$operation event=hourly_cap_reached"
+        log info "app=$CURRENT_APP_LABEL operation=$operation event=hourly_cap_reached"
         echo '0 0 0 0 0'
         return
     }
@@ -638,35 +664,37 @@ run_operation() {
     monitored="$(jq -r '.monitored_only | if . then 1 else 0 end' <<<"$CURRENT_INSTANCE_JSON")"
     skip_future="$(jq -r '.skip_future | if . then 1 else 0 end' <<<"$CURRENT_INSTANCE_JSON")"
     release_mode="$(jq -r '.future_release_date // "digital"' <<<"$CURRENT_INSTANCE_JSON")"
+    log info "app=$CURRENT_APP_LABEL operation=$operation event=candidate_request_started limit=$effective"
     if [[ "$CURRENT_TYPE" == sonarr ]]; then
         records="$(fetch_paginated_wanted "/wanted/$([[ "$operation" == missing ]] && printf missing || printf cutoff)")" || {
-            log warn "instance=$(printf '%q' "$CURRENT_NAME") operation=$operation event=fetch_failed status=$ARR_HTTP"
+            log warn "app=$CURRENT_APP_LABEL operation=$operation event=candidate_request_failed status=$ARR_HTTP error=$(printf '%q' "$ARR_ERROR")"
             return 1
         }
     elif [[ "$operation" == missing ]]; then
         records="$(radarr_fetch_missing)" || {
-            log warn "instance=$(printf '%q' "$CURRENT_NAME") operation=$operation event=fetch_failed status=$ARR_HTTP"
+            log warn "app=$CURRENT_APP_LABEL operation=$operation event=candidate_request_failed status=$ARR_HTTP error=$(printf '%q' "$ARR_ERROR")"
             return 1
         }
     else records="$(fetch_paginated_wanted "/wanted/cutoff")" || {
-        log warn "instance=$(printf '%q' "$CURRENT_NAME") operation=$operation event=fetch_failed status=$ARR_HTTP"
+        log warn "app=$CURRENT_APP_LABEL operation=$operation event=candidate_request_failed status=$ARR_HTTP error=$(printf '%q' "$ARR_ERROR")"
         return 1
     }; fi
     fetched="$(jq length <<<"$records")"
     eligible="$(filter_candidates "$CURRENT_TYPE" "$operation" "$monitored" "$skip_future" "$release_mode" "$records")" || {
-        log warn "instance=$(printf '%q' "$CURRENT_NAME") operation=$operation event=filter_failed"
+        log warn "app=$CURRENT_APP_LABEL operation=$operation event=filter_failed"
         return 1
     }
     eligible_count="$(jq length <<<"$eligible")"
     selected="$(select_candidates "$eligible" "$effective")" || return 1
     selected_count="$(jq length <<<"$selected")"
-    log info "instance=$(printf '%q' "$CURRENT_NAME") operation=$operation event=candidates fetched=$fetched eligible=$eligible_count selected=$selected_count"
+    log info "app=$CURRENT_APP_LABEL operation=$operation event=candidates_ready fetched=$fetched eligible=$eligible_count selected=$selected_count"
     ((selected_count > 0)) || {
         printf '%s %s 0 0 0\n' "$fetched" "$eligible_count"
         return
     }
     ((SHOW_CANDIDATES)) && show_selected_candidates "$operation" "$selected"
     if ((DRY_RUN)); then
+        log info "app=$CURRENT_APP_LABEL operation=$operation event=search_request_skipped reason=dry_run selected=$selected_count"
         printf '%s %s %s 0 0\n' "$fetched" "$eligible_count" "$selected_count"
         return
     fi
@@ -676,15 +704,16 @@ run_operation() {
 }
 
 metrics_json() { awk '{printf "{\"fetched\":%s,\"eligible\":%s,\"selected\":%s,\"submitted\":%s,\"failed\":%s}", $1,$2,$3,$4,$5}' <<<"$1"; }
-record_instance_result() { jq -cn --arg app "$CURRENT_TYPE" --arg instance "$CURRENT_NAME" --arg id "$CURRENT_INSTANCE_ID" --arg status "$1" --argjson queue "$2" --argjson missing "$3" --argjson upgrade "$4" '{app:$app,instance:$instance,instance_id:$id,status:$status,queue_size:$queue,missing:$missing,upgrade:$upgrade}' >>"$RUN_RESULTS_FILE"; }
+record_instance_result() { jq -cn --arg app "$CURRENT_APP_LABEL" --arg id "$CURRENT_INSTANCE_ID" --arg status "$1" --argjson queue "$2" --argjson missing "$3" --argjson upgrade "$4" '{app:$app,instance_id:$id,status:$status,queue_size:$queue,missing:$missing,upgrade:$upgrade}' >>"$RUN_RESULTS_FILE"; }
 
 run_instance() {
     local instance="$1" queue remaining missing upgrade status=ok missing_failed=0 upgrade_failed=0 missing_json upgrade_json
     CURRENT_INSTANCE_JSON="$instance"
     CURRENT_NAME="$(jq -r .name <<<"$instance")"
     CURRENT_TYPE="$(jq -r .type <<<"$instance")"
+    CURRENT_APP_LABEL="$(app_label "$CURRENT_TYPE")"
     CURRENT_URL="$(normalize_base_url "$(jq -r .url <<<"$instance")")" || {
-        log error "instance=$(printf '%q' "$CURRENT_NAME") event=invalid_url"
+        log error "app=$CURRENT_APP_LABEL event=invalid_url"
         ANY_FAILURE=1
         return
     }
@@ -692,35 +721,40 @@ run_instance() {
     CURRENT_INSTANCE_ID="$(printf '%s' "$CURRENT_TYPE|$CURRENT_URL|$CURRENT_NAME" | sha256sum | awk '{print substr($1,1,12)}')"
     CURRENT_QUEUE_LIMIT="$(jq -r .max_download_queue_size <<<"$instance")"
     CURRENT_HOURLY_CAP="$(jq -r .hourly_search_cap <<<"$instance")"
+    log info "app=$CURRENT_APP_LABEL event=connection_check_started"
     if ! check_connection; then
-        log error "instance=$(printf '%q' "$CURRENT_NAME") event=connection_failed status=$ARR_HTTP error=$(printf '%q' "$ARR_ERROR")"
+        log error "app=$CURRENT_APP_LABEL event=connection_failed status=$ARR_HTTP error=$(printf '%q' "$ARR_ERROR")"
         ANY_FAILURE=1
         record_instance_result connection_failed -1 '{}' '{}'
         return
     fi
     ANY_REACHABLE=1
+    log info "app=$CURRENT_APP_LABEL event=connection_ok status=$ARR_HTTP"
     if ((HEALTH_CHECK)); then
-        log info "instance=$(printf '%q' "$CURRENT_NAME") event=health_ok"
+        log info "app=$CURRENT_APP_LABEL event=health_ok"
         record_instance_result healthy -1 '{}' '{}'
         return
     fi
+    log info "app=$CURRENT_APP_LABEL event=queue_check_started"
     if ! queue="$(get_queue_size)"; then
         if [[ "$(jq -r '.queue_error_policy // "skip"' <<<"$instance")" == skip ]]; then
-            log warn "instance=$(printf '%q' "$CURRENT_NAME") event=queue_error_skip status=$ARR_HTTP"
+            log warn "app=$CURRENT_APP_LABEL event=queue_check_failed action=skip status=$ARR_HTTP error=$(printf '%q' "$ARR_ERROR")"
             record_instance_result queue_error_skip -1 '{}' '{}'
             return
         fi
         queue=-1
-        log warn "instance=$(printf '%q' "$CURRENT_NAME") event=queue_error_continue status=$ARR_HTTP"
+        log warn "app=$CURRENT_APP_LABEL event=queue_check_failed action=continue status=$ARR_HTTP error=$(printf '%q' "$ARR_ERROR")"
+    else
+        log info "app=$CURRENT_APP_LABEL event=queue_check_ok queue_size=$queue"
     fi
     if ((CURRENT_QUEUE_LIMIT >= 0 && queue >= CURRENT_QUEUE_LIMIT)); then
-        log info "instance=$(printf '%q' "$CURRENT_NAME") event=queue_gate queue_size=$queue threshold=$CURRENT_QUEUE_LIMIT"
+        log info "app=$CURRENT_APP_LABEL event=queue_gate queue_size=$queue threshold=$CURRENT_QUEUE_LIMIT"
         record_instance_result queue_gated "$queue" '{}' '{}'
         return
     fi
     remaining="$(counter_remaining "$CURRENT_HOURLY_CAP")"
     if ((remaining == 0)); then
-        log info "instance=$(printf '%q' "$CURRENT_NAME") event=hourly_cap_reached"
+        log info "app=$CURRENT_APP_LABEL event=hourly_cap_reached"
         record_instance_result hourly_capped "$queue" '{}' '{}'
         return
     fi
@@ -743,6 +777,7 @@ run_instance() {
         ((DRY_RUN && $(awk '{print $3}' <<<"$upgrade") > 0)) && DRY_FOUND=1
     fi
     record_instance_result "$status" "$queue" "$missing_json" "$upgrade_json"
+    log info "app=$CURRENT_APP_LABEL event=instance_complete status=$status"
 }
 
 instance_selected() {
@@ -785,6 +820,7 @@ run_cycle() {
     RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
     RUN_RESULTS_FILE="$(safe_temp)"
     : >"$RUN_RESULTS_FILE"
+    log info "event=run_started app_filter=$APP_FILTER mode_filter=$MODE_FILTER dry_run=$DRY_RUN health_check=$HEALTH_CHECK"
     state_compact
     counter_compact
     if [[ -n "$RESET_STATE" ]]; then

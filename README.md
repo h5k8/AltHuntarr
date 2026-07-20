@@ -20,7 +20,7 @@ It does **not** search indexers directly, choose releases, download files, impor
 - Operation-specific processed history with configurable TTL
 - Nonblocking `flock` lock and atomic state writes
 - Hard dry-run guard at the only search-command POST path
-- Sanitized human-readable and JSONL run logs
+- Sanitized activity logs showing connection checks, candidate requests, skips, and submitted searches
 - Alpine container running as non-root with no capabilities or listening ports
 
 The initial implementation supports Sonarr `episodes` mode. Season-pack and whole-show modes are intentionally not accepted yet.
@@ -166,7 +166,7 @@ docker run --rm \
   h5k8/althuntarr:latest
 ```
 
-If `/config/config.json` is absent and `/config` is writable, the entrypoint copies the bundled example to that path and exits. Edit it and run the container again.
+If `/config/config.json` is absent and `/config` is writable, the entrypoint copies the bundled example, applies non-empty environment URL and dry-run values, then starts immediately.
 
 Health check only:
 
@@ -364,7 +364,7 @@ Use [`examples/config.example.json`](examples/config.example.json) as the refere
 
 | Setting | Meaning |
 | --- | --- |
-| `name` | Unique display name |
+| `name` | Unique internal instance key used for state and the optional `--instance` filter; logs and summaries always identify the app as `Sonarr` or `Radarr` |
 | `type` | `sonarr` or `radarr` |
 | `enabled` | Include the instance |
 | `url` | Base URL without `/api/v3` |
@@ -399,8 +399,10 @@ Mount/store the resulting `secrets.json` as mode `0600`. If `/config/secrets.jso
 
 `log_dir` contains:
 
-- `altHuntarr.log` — human-readable events;
+- `altHuntarr.log` — timestamped activity events;
 - `runs.jsonl` — one structured summary per completed cycle.
+
+Each cycle logs `run_started`, a `connection_check_started` and `connection_ok` or `connection_failed` event for Sonarr and Radarr, queue status, candidate-request counts, dry-run/disabled skips, and every submitted search command. Set `ALTHUNTARR_LOG_LEVEL=debug` for sanitized HTTP method, endpoint, status, and retry events; request bodies, response bodies, and API keys are never logged.
 
 State identity includes application type, normalized URL, configured instance name, operation, and item ID. API keys are not included. Configure host-side rotation for `altHuntarr.log` and `runs.jsonl` if long retention is not needed.
 
