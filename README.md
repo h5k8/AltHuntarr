@@ -248,6 +248,8 @@ Each image includes OCI metadata, a provenance attestation, and an SBOM. GitHub 
 
 On first start, the container creates `/mnt/user/appdata/altHuntarrr/config/config.json`, applies the GUI URL values, and starts immediately. Non-empty URL variables remain authoritative and update `config.json` on subsequent normal starts; clearing a variable stops synchronization but leaves its last URL in the file.
 
+The container environment is the source of truth for the Unraid form: `ALTHUNTARR_SONARR_URL`, `ALTHUNTARR_RADARR_URL`, and `ALTHUNTARR_DRY_RUN` are synchronized into `config.json` at every normal container start. API keys are deliberately **not** written into `config.json`; the default instances reference `SONARR_API_KEY` and `RADARR_API_KEY` and resolve those secrets directly from the environment at runtime.
+
 The two GUI URL fields support the default configuration with one Sonarr and one Radarr instance. For multiple instances of either type, leave that type's URL field blank and manage each URL directly in `config.json`; the container refuses to apply one URL override ambiguously to multiple instances.
 
 Existing Unraid user templates are local copies and may not gain new fields automatically. Download the updated XML again, or add variables named `ALTHUNTARR_SONARR_URL` and `ALTHUNTARR_RADARR_URL` manually in the container editor.

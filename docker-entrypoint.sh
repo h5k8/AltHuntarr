@@ -7,8 +7,20 @@ interval="${ALTHUNTARR_INTERVAL:-900}"
 run_once="${ALTHUNTARR_RUN_ONCE:-false}"
 puid="${PUID:-99}"
 pgid="${PGID:-100}"
+dry_run="${ALTHUNTARR_DRY_RUN:-false}"
 sonarr_url="${ALTHUNTARR_SONARR_URL:-}"
 radarr_url="${ALTHUNTARR_RADARR_URL:-}"
+
+normalize_boolean() {
+    case "$2" in
+        1|true|TRUE|yes|YES) printf 'true' ;;
+        0|false|FALSE|no|NO) printf 'false' ;;
+        *)
+            printf 'ERROR: %s must be true or false.\n' "$1" >&2
+            exit 2
+            ;;
+    esac
+}
 
 validate_url_override() {
         if ! jq -en --arg url "$2" '
@@ -21,8 +33,9 @@ validate_url_override() {
     fi
 }
 
-apply_url_overrides() {
-    [ -n "$sonarr_url" ] || [ -n "$radarr_url" ] || return 0
+sync_environment_configuration() {
+    local dry_run_json
+    dry_run_json="$(normalize_boolean ALTHUNTARR_DRY_RUN "$dry_run")"
 
     [ -z "$sonarr_url" ] || validate_url_override ALTHUNTARR_SONARR_URL "$sonarr_url"
     [ -z "$radarr_url" ] || validate_url_override ALTHUNTARR_RADARR_URL "$radarr_url"
@@ -47,12 +60,13 @@ apply_url_overrides() {
 
     config_dir="$(dirname "$config_path")"
     temporary="$(mktemp "$config_dir/.config.json.XXXXXX")" || exit 2
-    if ! jq --arg sonarr "$sonarr_url" --arg radarr "$radarr_url" '
-      .instances |= map(
-        if .type == "sonarr" and $sonarr != "" then .url = $sonarr
-        elif .type == "radarr" and $radarr != "" then .url = $radarr
-        else . end
-      )
+        if ! jq --arg sonarr "$sonarr_url" --arg radarr "$radarr_url" --argjson dry_run "$dry_run_json" '
+            .general.dry_run = $dry_run
+            | .instances |= map(
+                    if .type == "sonarr" and $sonarr != "" then .url = $sonarr
+                    elif .type == "radarr" and $radarr != "" then .url = $radarr
+                    else . end
+                )
     ' "$config_path" >"$temporary"; then
         rm -f "$temporary"
         printf 'ERROR: cannot apply URL overrides to %s.\n' "$config_path" >&2
@@ -79,14 +93,14 @@ if [ "$(id -u)" = "0" ]; then
 
     if [ ! -f "$config_path" ]; then
         cp /usr/share/althuntarr/config.example.json "$config_path"
-        apply_url_overrides
+        sync_environment_configuration
         chmod 600 "$config_path"
         chown "$puid:$pgid" "$config_path"
         printf 'Created configuration at %s; continuing with the configured environment values.\n' "$config_path" >&2
     fi
 
     if [ "${1:-}" != "healthcheck" ]; then
-        apply_url_overrides
+        sync_environment_configuration
     fi
 
     chown -R "$puid:$pgid" /config /data
