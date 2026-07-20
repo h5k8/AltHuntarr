@@ -7,6 +7,64 @@ interval="${ALTHUNTARR_INTERVAL:-900}"
 run_once="${ALTHUNTARR_RUN_ONCE:-false}"
 puid="${PUID:-99}"
 pgid="${PGID:-100}"
+sonarr_url="${ALTHUNTARR_SONARR_URL:-}"
+radarr_url="${ALTHUNTARR_RADARR_URL:-}"
+
+validate_url_override() {
+        if ! jq -en --arg url "$2" '
+            (($url | contains("\"") or contains("\n") or contains("\r")) | not)
+      and ($url | test("^https?://[^/?#@]+(:[0-9]+)?(/[^?#]*)?$"))
+      and ($url | contains("/api/v3") | not)
+    ' >/dev/null; then
+        printf 'ERROR: %s must be an http(s) base URL without credentials, query, fragment, or /api/v3.\n' "$1" >&2
+        exit 2
+    fi
+}
+
+apply_url_overrides() {
+    [ -n "$sonarr_url" ] || [ -n "$radarr_url" ] || return 0
+
+    [ -z "$sonarr_url" ] || validate_url_override ALTHUNTARR_SONARR_URL "$sonarr_url"
+    [ -z "$radarr_url" ] || validate_url_override ALTHUNTARR_RADARR_URL "$radarr_url"
+    sonarr_url="${sonarr_url%/}"
+    radarr_url="${radarr_url%/}"
+
+    for app in sonarr radarr; do
+        case "$app" in
+            sonarr) url="$sonarr_url" ;;
+            radarr) url="$radarr_url" ;;
+        esac
+        [ -n "$url" ] || continue
+        count="$(jq -r --arg app "$app" '[.instances[] | select(.type == $app)] | length' "$config_path")" || {
+            printf 'ERROR: cannot read instances from %s.\n' "$config_path" >&2
+            exit 2
+        }
+        if [ "$count" != "1" ]; then
+            printf 'ERROR: ALTHUNTARR_%s_URL requires exactly one %s instance in config.json; found %s. Leave it blank for multiple instances.\n' "$(printf '%s' "$app" | tr '[:lower:]' '[:upper:]')" "$app" "$count" >&2
+            exit 2
+        fi
+    done
+
+    config_dir="$(dirname "$config_path")"
+    temporary="$(mktemp "$config_dir/.config.json.XXXXXX")" || exit 2
+    if ! jq --arg sonarr "$sonarr_url" --arg radarr "$radarr_url" '
+      .instances |= map(
+        if .type == "sonarr" and $sonarr != "" then .url = $sonarr
+        elif .type == "radarr" and $radarr != "" then .url = $radarr
+        else . end
+      )
+    ' "$config_path" >"$temporary"; then
+        rm -f "$temporary"
+        printf 'ERROR: cannot apply URL overrides to %s.\n' "$config_path" >&2
+        exit 2
+    fi
+    chmod 600 "$temporary"
+    if cmp -s "$temporary" "$config_path"; then
+        rm -f "$temporary"
+    else
+        mv -f "$temporary" "$config_path"
+    fi
+}
 
 validate_id() {
     case "$2" in
@@ -21,10 +79,15 @@ if [ "$(id -u)" = "0" ]; then
 
     if [ ! -f "$config_path" ]; then
         cp /usr/share/althuntarr/config.example.json "$config_path"
+        apply_url_overrides
         chmod 600 "$config_path"
         chown "$puid:$pgid" "$config_path"
         printf 'Created example configuration at %s. Edit it, then restart the container.\n' "$config_path" >&2
         exit 3
+    fi
+
+    if [ "${1:-}" != "healthcheck" ]; then
+        apply_url_overrides
     fi
 
     chown -R "$puid:$pgid" /config /data

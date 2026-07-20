@@ -85,7 +85,7 @@ chmod 0700 config data data/state data/logs
 
 Edit `config/config.json`:
 
-- set each Sonarr/Radarr base URL;
+- set each Sonarr/Radarr base URL, or set `ALTHUNTARR_SONARR_URL` and `ALTHUNTARR_RADARR_URL` in `.env` for the default single instances;
 - do not append `/api/v3`;
 - keep `general.state_dir` as `/data/state`;
 - keep `general.log_dir` as `/data/logs`;
@@ -187,6 +187,8 @@ docker run --rm \
 | `ALTHUNTARR_RUN_ONCE` | `false` | Run one cycle and exit |
 | `ALTHUNTARR_DRY_RUN` | `false` | Force dry-run regardless of configuration |
 | `ALTHUNTARR_SHOW_CANDIDATES` | `false` | Print selected candidates and force dry-run |
+| `ALTHUNTARR_SONARR_URL` | unset | Override the URL of the single configured Sonarr instance |
+| `ALTHUNTARR_RADARR_URL` | unset | Override the URL of the single configured Radarr instance |
 | `ALTHUNTARR_APP` | unset | Limit to `sonarr`, `radarr`, or `all` |
 | `ALTHUNTARR_INSTANCE` | unset | Limit to one instance name |
 | `ALTHUNTARR_MODE` | unset | Limit to `missing`, `upgrade`, or `both` |
@@ -197,7 +199,7 @@ docker run --rm \
 
 ## Unraid installation
 
-The Unraid Docker template is **[`unraid/altHuntarrrscript.xml`](unraid/altHuntarrrscript.xml)**. It is an Unraid Docker Manager v2 XML template and exposes all configuration paths, masked API keys, dry-run controls, interval, timezone, and `PUID`/`PGID` in the Unraid Add Container GUI.
+The Unraid Docker template is **[`unraid/altHuntarrrscript.xml`](unraid/altHuntarrrscript.xml)**. It is an Unraid Docker Manager v2 XML template and exposes Sonarr/Radarr URLs, all configuration paths, masked API keys, dry-run controls, interval, timezone, and `PUID`/`PGID` in the Unraid Add Container GUI.
 
 There is intentionally no application WebUI: this project opens no port and runs no HTTP server. Unraid's Docker GUI remains fully usable for installation, configuration, logs, console access, start/stop, updates, and resource settings; the template's `WebUI` field is therefore empty by design.
 
@@ -238,12 +240,17 @@ Each image includes OCI metadata, a provenance attestation, and an SBOM. GitHub 
 4. Keep these mappings:
    - `/config` → `/mnt/user/appdata/altHuntarrr/config`;
    - `/data` → `/mnt/user/appdata/altHuntarrr/data`.
-5. Add the Sonarr and Radarr API keys as masked variables.
-6. Keep `PUID=99` and `PGID=100` for standard Unraid `nobody:users`, or change them to the owner of your appdata paths.
-7. Leave `ALTHUNTARR_DRY_RUN=true` initially.
-8. Apply the template.
+5. Enter the Sonarr and Radarr base URLs reachable from this container. Do not append `/api/v3` and do not use `localhost` for other containers.
+6. Add the Sonarr and Radarr API keys as masked variables.
+7. Keep `PUID=99` and `PGID=100` for standard Unraid `nobody:users`, or change them to the owner of your appdata paths.
+8. Leave `ALTHUNTARR_DRY_RUN=true` initially.
+9. Apply the template.
 
-On first start, the container creates `/mnt/user/appdata/altHuntarrr/config/config.json` and exits. Edit that file, update the instance URLs, and start the container again.
+On first start, the container creates `/mnt/user/appdata/altHuntarrr/config/config.json`, applies the GUI URL values, and exits so the generated configuration can be reviewed. Start the container again after reviewing it. Non-empty URL variables remain authoritative and update `config.json` on subsequent normal starts; clearing a variable stops synchronization but leaves its last URL in the file.
+
+The two GUI URL fields support the default configuration with one Sonarr and one Radarr instance. For multiple instances of either type, leave that type's URL field blank and manage each URL directly in `config.json`; the container refuses to apply one URL override ambiguously to multiple instances.
+
+Existing Unraid user templates are local copies and may not gain new fields automatically. Download the updated XML again, or add variables named `ALTHUNTARR_SONARR_URL` and `ALTHUNTARR_RADARR_URL` manually in the container editor.
 
 The template exposes no port and applies:
 

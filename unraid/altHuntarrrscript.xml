@@ -18,7 +18,7 @@
   <DateInstalled/>
   <DonateText/>
   <DonateLink/>
-  <Requires>Create /mnt/user/appdata/altHuntarrr/config/config.json from examples/config.example.json. Keep general.state_dir=/data/state and general.log_dir=/data/logs.</Requires>
+  <Requires>Enter container-reachable Sonarr and Radarr base URLs. Do not append /api/v3. Keep general.state_dir=/data/state and general.log_dir=/data/logs.</Requires>
   <Config Name="User ID (PUID)" Target="PUID" Default="99" Mode="" Description="Runtime user ID. Unraid nobody is 99." Type="Variable" Display="always" Required="true" Mask="false">99</Config>
   <Config Name="Group ID (PGID)" Target="PGID" Default="100" Mode="" Description="Runtime group ID. Unraid users is 100." Type="Variable" Display="always" Required="true" Mask="false">100</Config>
   <Config Name="Configuration" Target="/config" Default="/mnt/user/appdata/altHuntarrr/config" Mode="rw" Description="Directory containing config.json and optional secrets.json. On first start the container creates an example config and exits; edit it and restart." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/altHuntarrr/config</Config>
@@ -26,6 +26,8 @@
   <Config Name="Loop interval (seconds)" Target="ALTHUNTARR_INTERVAL" Default="900" Mode="" Description="Delay between cycles. 900 means 15 minutes." Type="Variable" Display="always" Required="true" Mask="false">900</Config>
   <Config Name="Dry run" Target="ALTHUNTARR_DRY_RUN" Default="true" Mode="" Description="Keep true for initial validation. No command POSTs or state/counter consumption occur." Type="Variable" Display="always" Required="true" Mask="false">true</Config>
   <Config Name="Show candidates" Target="ALTHUNTARR_SHOW_CANDIDATES" Default="false" Mode="" Description="Print selected candidates to the container log. Also forces dry-run behavior." Type="Variable" Display="advanced" Required="false" Mask="false">false</Config>
+  <Config Name="Sonarr URL" Target="ALTHUNTARR_SONARR_URL" Default="" Mode="" Description="Sonarr base URL reachable from this container, for example http://192.168.1.10:8989. Do not append /api/v3. Leave blank and edit config.json when using multiple Sonarr instances." Type="Variable" Display="always" Required="false" Mask="false"/>
+  <Config Name="Radarr URL" Target="ALTHUNTARR_RADARR_URL" Default="" Mode="" Description="Radarr base URL reachable from this container, for example http://192.168.1.10:7878. Do not append /api/v3. Leave blank and edit config.json when using multiple Radarr instances." Type="Variable" Display="always" Required="false" Mask="false"/>
   <Config Name="Sonarr API key" Target="SONARR_API_KEY" Default="" Mode="" Description="API key used by the default Sonarr instance. Add custom masked variables only when configuring multiple Sonarr instances." Type="Variable" Display="always" Required="false" Mask="true"/>
   <Config Name="Radarr API key" Target="RADARR_API_KEY" Default="" Mode="" Description="API key used by the default Radarr instance. Add custom masked variables only when configuring multiple Radarr instances." Type="Variable" Display="always" Required="false" Mask="true"/>
   <Config Name="Timezone" Target="TZ" Default="UTC" Mode="" Description="Container timezone. State and hourly caps always use UTC." Type="Variable" Display="advanced" Required="false" Mask="false">UTC</Config>
