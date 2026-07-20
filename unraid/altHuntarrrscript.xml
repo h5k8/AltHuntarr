@@ -19,8 +19,8 @@
   <DonateText/>
   <DonateLink/>
   <Requires>Enter container-reachable Sonarr and Radarr base URLs. Do not append /api/v3. Keep general.state_dir=/data/state and general.log_dir=/data/logs.</Requires>
-  <Config Name="User ID (PUID)" Target="PUID" Default="99" Mode="" Description="Runtime user ID. Unraid nobody is 99." Type="Variable" Display="always" Required="true" Mask="false">99</Config>
-  <Config Name="Group ID (PGID)" Target="PGID" Default="100" Mode="" Description="Runtime group ID. Unraid users is 100." Type="Variable" Display="always" Required="true" Mask="false">100</Config>
+  <Config Name="User ID (PUID)" Target="PUID" Default="99" Mode="" Description="Runtime user ID. Unraid nobody is 99." Type="Variable" Display="advanced" Required="true" Mask="false">99</Config>
+  <Config Name="Group ID (PGID)" Target="PGID" Default="100" Mode="" Description="Runtime group ID. Unraid users is 100." Type="Variable" Display="advanced" Required="true" Mask="false">100</Config>
   <Config Name="Configuration" Target="/config" Default="/mnt/user/appdata/altHuntarrr/config" Mode="rw" Description="Directory containing config.json and optional secrets.json. On first start the container creates an example config and exits; edit it and restart." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/altHuntarrr/config</Config>
   <Config Name="Persistent data" Target="/data" Default="/mnt/user/appdata/altHuntarrr/data" Mode="rw" Description="Persistent processed state, counters, and logs." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/altHuntarrr/data</Config>
   <Config Name="Loop interval (seconds)" Target="ALTHUNTARR_INTERVAL" Default="900" Mode="" Description="Delay between cycles. 900 means 15 minutes." Type="Variable" Display="always" Required="true" Mask="false">900</Config>
