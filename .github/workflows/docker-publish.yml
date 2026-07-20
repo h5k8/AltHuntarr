@@ -67,7 +67,7 @@ jobs:
 
       - name: Run Bats tests
         run: |
-          bats tests
+          bats --print-output-on-failure tests
 
   docker:
     name: Build${{ github.event_name != 'pull_request' && ' and publish' || '' }} image
