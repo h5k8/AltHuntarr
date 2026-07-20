@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install test tools
         run: |
@@ -44,13 +44,25 @@ jobs:
           echo 'fb096c5d1ac6beabbdbaa2874d025badb03ee07929f0c9ff67563ce8c75398b1  /tmp/shfmt' | sha256sum --check
           sudo install -m 0755 /tmp/shfmt /usr/local/bin/shfmt
 
-      - name: Validate scripts and fixtures
+      - name: Validate script syntax
         run: |
           bash -n altHuntarrrscript.sh
           sh -n docker-entrypoint.sh
+
+      - name: Run ShellCheck
+        run: |
           shellcheck altHuntarrrscript.sh docker-entrypoint.sh
+
+      - name: Check Bash formatting
+        run: |
           shfmt -d -i 4 altHuntarrrscript.sh
+
+      - name: Validate JSON fixtures
+        run: |
           jq empty examples/config.example.json examples/secrets.example.json
+
+      - name: Run Bats tests
+        run: |
           bats tests
 
   docker:
@@ -62,7 +74,7 @@ jobs:
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
